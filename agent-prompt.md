@@ -69,63 +69,23 @@ git commit -m "Job digest: YYYY-MM-DD"
 git push -u origin <branch>
 ```
 
-## Email Delivery (after commit)
+## Display Digest in Claude Window (after commit)
 
-After committing the digest, send it as an email to **duonganhquang@gmail.com** using the
-SendGrid API. Requires a `SENDGRID_API_KEY` environment secret to be configured.
+After committing the digest, read the file and output its full contents as markdown directly
+in your response. This makes the digest visible in the Claude conversation window.
 
-Steps:
-1. Read the digest file into a shell variable (escaped for JSON).
-2. Build a plain-text + HTML email body from the digest content.
-3. POST to the SendGrid v3 mail/send endpoint.
+Do this by reading the digest file and printing it as your final text output — do NOT use
+a code block or bash echo. Just output the markdown text directly so it renders in the UI.
 
-```bash
-# Requires: SENDGRID_API_KEY env var set as a project secret
-DIGEST_FILE="digests/$(date +%Y-%m-%d)-jobs.md"
-DIGEST_CONTENT=$(cat "$DIGEST_FILE")
-DATE_LABEL=$(date +%Y-%m-%d)
-
-# Convert digest to a minimal HTML body (newlines → <br>, bold markdown → <strong>)
-HTML_BODY=$(python3 - <<'PYEOF'
-import sys, os, re
-
-content = open(os.environ["DIGEST_FILE"]).read()
-# Escape HTML special chars
-content = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-# Markdown bold **text** → <strong>text</strong>
-content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', content)
-# Headings ## → <h2>
-content = re.sub(r'^## (.+)$', r'<h2>\1</h2>', content, flags=re.MULTILINE)
-# Headings # → <h1>
-content = re.sub(r'^# (.+)$', r'<h1>\1</h1>', content, flags=re.MULTILINE)
-# Lines starting with - → list items (wrap groups in <ul>)
-content = re.sub(r'^- (.+)$', r'<li>\1</li>', content, flags=re.MULTILINE)
-# Horizontal rules
-content = content.replace('---', '<hr>')
-# Remaining newlines → <br>
-content = content.replace('\n', '<br>\n')
-print(content)
-PYEOF
-)
-
-# Send via SendGrid
-curl -s --request POST \
-  --url https://api.sendgrid.com/v3/mail/send \
-  --header "Authorization: Bearer $SENDGRID_API_KEY" \
-  --header "Content-Type: application/json" \
-  --data "{
-    \"personalizations\": [{\"to\": [{\"email\": \"duonganhquang@gmail.com\"}]}],
-    \"from\": {\"email\": \"digest@biotechjobsearch.ai\", \"name\": \"Bay Area Job Digest\"},
-    \"subject\": \"Bay Area Job Digest — $DATE_LABEL\",
-    \"content\": [
-      {\"type\": \"text/plain\", \"value\": $(python3 -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$DIGEST_FILE")},
-      {\"type\": \"text/html\",  \"value\": $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$HTML_BODY")}
-    ]
-  }" \
-  && echo "Email sent successfully" \
-  || echo "Email send failed — check SENDGRID_API_KEY secret"
+Example (pseudo-code showing intent — implement as plain text output, not a tool call):
+```
+Read digests/YYYY-MM-DD-jobs.md, then write its contents verbatim as your response text.
 ```
 
-> **Setup:** Add `SENDGRID_API_KEY` as an environment secret in your Claude Code on the Web
-> project settings. The sending address `digest@biotechjobsearch.ai` must be verified in
-> your SendGrid sender identity (or swap to any verified address you own).
+Concrete steps:
+1. After the git push, read the digest file:
+   ```bash
+   cat digests/$(date +%Y-%m-%d)-jobs.md
+   ```
+2. Output the full contents of that file as your final reply text so the user sees the
+   formatted digest rendered in the Claude conversation window.
